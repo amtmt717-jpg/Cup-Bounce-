@@ -1,0 +1,13 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{text-align:center;background:#eee}canvas{background:#fff;border:2px solid #000;touch-action:none;max-width:95vw}</style></head><body><h3>Cup Bounce Prototype</h3><canvas id=c width=400 height=650></canvas><p>ボールをドラッグして引っ張って離す</p><script>
+const cv=c,ctx=cv.getContext('2d');let b={x:70,y:580,vx:0,vy:0,r:12},drag=0,p={x:0,y:0},score=0;
+const cup={x:310,y:530,w:50,h:60},g=.35,e=.82;
+function d(){ctx.clearRect(0,0,400,650);ctx.fillRect(0,610,400,4);ctx.strokeRect(cup.x,cup.y,cup.w,cup.h);ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,7);ctx.fill();ctx.fillText("Score:"+score,10,20);if(drag){ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(p.x,p.y);ctx.stroke();}}
+function loop(){b.vy+=g;b.x+=b.vx;b.y+=b.vy;if(b.x<b.r||b.x>400-b.r){b.vx*=-e;b.x=Math.max(b.r,Math.min(400-b.r,b.x));}if(b.y>610-b.r){b.y=610-b.r;b.vy*=-e;}
+if(b.x>cup.x+8&&b.x<cup.x+cup.w-8&&b.y>cup.y+8&&b.y<cup.y+cup.h){score++;alert("成功！");b={x:70,y:580,vx:0,vy:0,r:12};}
+d();requestAnimationFrame(loop);}
+function pos(ev){let r=cv.getBoundingClientRect();return{x:(ev.clientX-r.left)*400/r.width,y:(ev.clientY-r.top)*650/r.height}}
+cv.onpointerdown=e=>{let q=pos(e);if(Math.hypot(q.x-b.x,q.y-b.y)<25){drag=1;p=q;}};
+cv.onpointermove=e=>{if(drag){p=pos(e);d();}};
+cv.onpointerup=e=>{if(!drag)return;drag=0;let q=pos(e);b.vx=(b.x-q.x)/8;b.vy=(b.y-q.y)/8;};
+d();loop();
+</script></body></html>
