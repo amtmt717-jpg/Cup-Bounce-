@@ -1,13 +1,427 @@
-<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{text-align:center;background:#eee}canvas{background:#fff;border:2px solid #000;touch-action:none;max-width:95vw}</style></head><body><h3>Cup Bounce Prototype</h3><canvas id=c width=400 height=650></canvas><p>ボールをドラッグして引っ張って離す</p><script>
-const cv=c,ctx=cv.getContext('2d');let b={x:70,y:580,vx:0,vy:0,r:12},drag=0,p={x:0,y:0},score=0;
-const cup={x:310,y:530,w:50,h:60},g=.35,e=.82;
-function d(){ctx.clearRect(0,0,400,650);ctx.fillRect(0,610,400,4);ctx.strokeRect(cup.x,cup.y,cup.w,cup.h);ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,7);ctx.fill();ctx.fillText("Score:"+score,10,20);if(drag){ctx.beginPath();ctx.moveTo(b.x,b.y);ctx.lineTo(p.x,p.y);ctx.stroke();}}
-function loop(){b.vy+=g;b.x+=b.vx;b.y+=b.vy;if(b.x<b.r||b.x>400-b.r){b.vx*=-e;b.x=Math.max(b.r,Math.min(400-b.r,b.x));}if(b.y>610-b.r){b.y=610-b.r;b.vy*=-e;}
-if(b.x>cup.x+8&&b.x<cup.x+cup.w-8&&b.y>cup.y+8&&b.y<cup.y+cup.h){score++;alert("成功！");b={x:70,y:580,vx:0,vy:0,r:12};}
-d();requestAnimationFrame(loop);}
-function pos(ev){let r=cv.getBoundingClientRect();return{x:(ev.clientX-r.left)*400/r.width,y:(ev.clientY-r.top)*650/r.height}}
-cv.onpointerdown=e=>{let q=pos(e);if(Math.hypot(q.x-b.x,q.y-b.y)<25){drag=1;p=q;}};
-cv.onpointermove=e=>{if(drag){p=pos(e);d();}};
-cv.onpointerup=e=>{if(!drag)return;drag=0;let q=pos(e);b.vx=(b.x-q.x)/8;b.vy=(b.y-q.y)/8;};
-d();loop();
-</script></body></html>
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Cup Bounce</title>
+<style>
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    min-height:100vh;
+    display:flex;
+    justify-content:center;
+    background:#f2f2f2;
+    color:#111;
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  .app{
+    width:min(96vw,520px);
+    padding:10px;
+    text-align:center;
+  }
+  h1{
+    margin:4px 0 8px;
+    font-size:clamp(22px,7vw,32px);
+    letter-spacing:.08em;
+  }
+  canvas{
+    display:block;
+    width:100%;
+    height:auto;
+    background:#fff;
+    border:3px solid #111;
+    touch-action:none;
+  }
+  .info{
+    display:flex;
+    justify-content:space-between;
+    gap:8px;
+    margin:8px 0;
+    font-weight:700;
+  }
+  button{
+    width:100%;
+    min-height:48px;
+    border:2px solid #111;
+    background:#fff;
+    color:#111;
+    font:inherit;
+    font-weight:700;
+  }
+  button:active{
+    background:#111;
+    color:#fff;
+  }
+  p{
+    margin:8px 0 0;
+    font-size:12px;
+    line-height:1.5;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>CUP BOUNCE</h1>
+  <div class="info">
+    <span id="score">SCORE 0</span>
+    <span id="shots">SHOTS 0</span>
+  </div>
+  <canvas id="game" width="420" height="680"></canvas>
+  <button id="reset">RESET</button>
+  <p>ボールを引っ張って離す。コップへ上から入った時だけ成功。</p>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  const scoreEl = document.getElementById("score");
+  const shotsEl = document.getElementById("shots");
+  const resetBtn = document.getElementById("reset");
+
+  const W = canvas.width;
+  const H = canvas.height;
+  const FLOOR_Y = 620;
+
+  const GRAVITY = 0.34;
+  const BOUNCE = 0.83;
+  const AIR_FRICTION = 0.997;
+  const FLOOR_FRICTION = 0.985;
+
+  const cup = {
+    x: 318,
+    y: FLOOR_Y - 82,
+    width: 58,
+    height: 82,
+    rim: 7
+  };
+
+  let ball;
+  let score = 0;
+  let shots = 0;
+  let dragging = false;
+  let dragPoint = { x: 0, y: 0 };
+  let launched = false;
+  let scoredThisShot = false;
+  let prevBallY = 0;
+
+  function newBall() {
+    ball = {
+      x: 72,
+      y: FLOOR_Y - 14,
+      vx: 0,
+      vy: 0,
+      r: 13
+    };
+    dragging = false;
+    launched = false;
+    scoredThisShot = false;
+    prevBallY = ball.y;
+  }
+
+  function fullReset() {
+    score = 0;
+    shots = 0;
+    updateHud();
+    newBall();
+  }
+
+  function updateHud() {
+    scoreEl.textContent = `SCORE ${score}`;
+    shotsEl.textContent = `SHOTS ${shots}`;
+  }
+
+  function pointerPosition(event) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left) * (W / rect.width),
+      y: (event.clientY - rect.top) * (H / rect.height)
+    };
+  }
+
+  function isNearBall(p) {
+    return Math.hypot(p.x - ball.x, p.y - ball.y) <= ball.r + 18;
+  }
+
+  function launchFromDrag(p) {
+    const maxPower = 22;
+    let vx = (ball.x - p.x) / 7.5;
+    let vy = (ball.y - p.y) / 7.5;
+
+    const speed = Math.hypot(vx, vy);
+    if (speed > maxPower) {
+      vx = (vx / speed) * maxPower;
+      vy = (vy / speed) * maxPower;
+    }
+
+    if (speed > 1.2) {
+      ball.vx = vx;
+      ball.vy = vy;
+      launched = true;
+      shots++;
+      scoredThisShot = false;
+      updateHud();
+    }
+  }
+
+  function resolveWorldCollisions() {
+    if (ball.x - ball.r < 0) {
+      ball.x = ball.r;
+      ball.vx = Math.abs(ball.vx) * BOUNCE;
+    }
+
+    if (ball.x + ball.r > W) {
+      ball.x = W - ball.r;
+      ball.vx = -Math.abs(ball.vx) * BOUNCE;
+    }
+
+    if (ball.y - ball.r < 0) {
+      ball.y = ball.r;
+      ball.vy = Math.abs(ball.vy) * BOUNCE;
+    }
+
+    if (ball.y + ball.r > FLOOR_Y) {
+      ball.y = FLOOR_Y - ball.r;
+      ball.vy = -Math.abs(ball.vy) * BOUNCE;
+      ball.vx *= FLOOR_FRICTION;
+
+      if (Math.abs(ball.vy) < 0.7) ball.vy = 0;
+      if (Math.abs(ball.vx) < 0.05) ball.vx = 0;
+    }
+  }
+
+  function resolveCupCollisions() {
+    const left = cup.x;
+    const right = cup.x + cup.width;
+    const top = cup.y;
+    const bottom = cup.y + cup.height;
+    const rim = cup.rim;
+
+    const insideHorizontal = ball.x > left + rim && ball.x < right - rim;
+    const descending = ball.vy > 0;
+
+    // ゴール判定:
+    // 前フレームでボール底面がコップ上端より上にあり、
+    // 今フレームで上端を下向きに通過し、
+    // なおかつボール全体が左右の縁の内側にある場合のみ成功。
+    const crossedRimFromAbove =
+      prevBallY + ball.r <= top &&
+      ball.y + ball.r >= top &&
+      descending &&
+      ball.x - ball.r > left + rim &&
+      ball.x + ball.r < right - rim;
+
+    if (crossedRimFromAbove && !scoredThisShot) {
+      score++;
+      scoredThisShot = true;
+      updateHud();
+
+      setTimeout(() => {
+        newBall();
+      }, 450);
+      return;
+    }
+
+    // 左の側面
+    const overlapsLeftWall =
+      ball.x + ball.r > left &&
+      ball.x - ball.r < left + rim &&
+      ball.y + ball.r > top &&
+      ball.y - ball.r < bottom;
+
+    if (overlapsLeftWall) {
+      ball.x = left - ball.r;
+      ball.vx = -Math.abs(ball.vx) * BOUNCE;
+    }
+
+    // 右の側面
+    const overlapsRightWall =
+      ball.x - ball.r < right &&
+      ball.x + ball.r > right - rim &&
+      ball.y + ball.r > top &&
+      ball.y - ball.r < bottom;
+
+    if (overlapsRightWall) {
+      ball.x = right + ball.r;
+      ball.vx = Math.abs(ball.vx) * BOUNCE;
+    }
+
+    // 左の縁
+    circleRectCollision(left - 3, top - 5, rim + 6, 10);
+
+    // 右の縁
+    circleRectCollision(right - rim - 3, top - 5, rim + 6, 10);
+
+    // コップ内部の底
+    if (
+      insideHorizontal &&
+      ball.y + ball.r > bottom - 6 &&
+      ball.y < bottom
+    ) {
+      ball.y = bottom - 6 - ball.r;
+      ball.vy = -Math.abs(ball.vy) * 0.35;
+      ball.vx *= 0.8;
+    }
+  }
+
+  function circleRectCollision(rx, ry, rw, rh) {
+    const closestX = Math.max(rx, Math.min(ball.x, rx + rw));
+    const closestY = Math.max(ry, Math.min(ball.y, ry + rh));
+    const dx = ball.x - closestX;
+    const dy = ball.y - closestY;
+    const distSq = dx * dx + dy * dy;
+
+    if (distSq >= ball.r * ball.r || distSq === 0) return;
+
+    const dist = Math.sqrt(distSq);
+    const nx = dx / dist;
+    const ny = dy / dist;
+    const overlap = ball.r - dist;
+
+    ball.x += nx * overlap;
+    ball.y += ny * overlap;
+
+    const dot = ball.vx * nx + ball.vy * ny;
+    if (dot < 0) {
+      ball.vx -= (1 + BOUNCE) * dot * nx;
+      ball.vy -= (1 + BOUNCE) * dot * ny;
+    }
+  }
+
+  function update() {
+    prevBallY = ball.y;
+
+    if (!dragging && launched && !scoredThisShot) {
+      ball.vy += GRAVITY;
+      ball.vx *= AIR_FRICTION;
+      ball.vy *= AIR_FRICTION;
+
+      ball.x += ball.vx;
+      ball.y += ball.vy;
+
+      resolveWorldCollisions();
+      resolveCupCollisions();
+
+      // 長く止まったら再挑戦しやすいように自動リセット
+      if (
+        Math.abs(ball.vx) < 0.03 &&
+        Math.abs(ball.vy) < 0.03 &&
+        ball.y > FLOOR_Y - ball.r - 1
+      ) {
+        launched = false;
+      }
+    }
+
+    draw();
+    requestAnimationFrame(update);
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(0, 0, W, H);
+
+    // 床
+    ctx.fillStyle = "#111";
+    ctx.fillRect(0, FLOOR_Y, W, 5);
+
+    // コップ
+    ctx.lineWidth = cup.rim;
+    ctx.strokeStyle = "#111";
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(cup.x, cup.y);
+    ctx.lineTo(cup.x, cup.y + cup.height);
+    ctx.lineTo(cup.x + cup.width, cup.y + cup.height);
+    ctx.lineTo(cup.x + cup.width, cup.y);
+    ctx.stroke();
+
+    // コップの開口部
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cup.x + cup.rim, cup.y);
+    ctx.lineTo(cup.x + cup.width - cup.rim, cup.y);
+    ctx.stroke();
+
+    // ボール
+    ctx.fillStyle = "#111";
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 引っ張り線と予測点
+    if (dragging) {
+      ctx.strokeStyle = "#777";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(ball.x, ball.y);
+      ctx.lineTo(dragPoint.x, dragPoint.y);
+      ctx.stroke();
+
+      const vx = (ball.x - dragPoint.x) / 7.5;
+      const vy = (ball.y - dragPoint.y) / 7.5;
+      let px = ball.x;
+      let py = ball.y;
+      let pvx = vx;
+      let pvy = vy;
+
+      ctx.fillStyle = "#999";
+      for (let i = 0; i < 16; i++) {
+        pvy += GRAVITY;
+        px += pvx * 1.8;
+        py += pvy * 1.8;
+        ctx.beginPath();
+        ctx.arc(px, py, 2.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.fillStyle = "#111";
+    ctx.font = "700 16px ui-monospace, monospace";
+
+    if (!launched) {
+      ctx.fillText("DRAG & RELEASE", 18, 34);
+    }
+
+    if (scoredThisShot) {
+      ctx.font = "700 34px ui-monospace, monospace";
+      ctx.fillText("IN!", 178, 120);
+    }
+  }
+
+  canvas.addEventListener("pointerdown", (event) => {
+    const p = pointerPosition(event);
+
+    if (!launched && isNearBall(p)) {
+      dragging = true;
+      dragPoint = p;
+      canvas.setPointerCapture(event.pointerId);
+    }
+  });
+
+  canvas.addEventListener("pointermove", (event) => {
+    if (!dragging) return;
+    dragPoint = pointerPosition(event);
+  });
+
+  canvas.addEventListener("pointerup", (event) => {
+    if (!dragging) return;
+    dragging = false;
+    launchFromDrag(pointerPosition(event));
+  });
+
+  canvas.addEventListener("pointercancel", () => {
+    dragging = false;
+  });
+
+  resetBtn.addEventListener("click", fullReset);
+
+  fullReset();
+  requestAnimationFrame(update);
+})();
+</script>
+</body>
+</html>
